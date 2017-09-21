@@ -60,6 +60,7 @@ import java.util.Optional;
 
 import static com.facebook.presto.metadata.Signature.internalOperator;
 import static com.facebook.presto.spi.function.OperatorType.SATURATED_FLOOR_CAST;
+import static com.facebook.presto.spi.predicate.TupleDomain.columnWiseUnion;
 import static com.facebook.presto.sql.ExpressionUtils.and;
 import static com.facebook.presto.sql.ExpressionUtils.combineConjuncts;
 import static com.facebook.presto.sql.ExpressionUtils.combineDisjunctsWithDefault;
@@ -337,7 +338,7 @@ public final class DomainTranslator
                             combineConjuncts(leftResult.getRemainingExpression(), rightResult.getRemainingExpression()));
 
                 case OR:
-                    TupleDomain<Symbol> columnUnionedTupleDomain = TupleDomain.columnWiseUnion(leftTupleDomain, rightTupleDomain);
+                    TupleDomain<Symbol> columnUnionedTupleDomain = columnWiseUnion(leftTupleDomain, rightTupleDomain);
 
                     // In most cases, the columnUnionedTupleDomain is only a superset of the actual strict union
                     // and so we can return the current node as the remainingExpression so that all bounds will be double checked again at execution time.
@@ -689,11 +690,34 @@ public final class DomainTranslator
             InListExpression valueList = (InListExpression) node.getValueList();
             checkState(!valueList.getValues().isEmpty(), "InListExpression should never be empty");
 
-            ImmutableList.Builder<Expression> disjuncts = ImmutableList.builder();
+            TupleDomain<Symbol> inPredicateTupleDomain = complement ? TupleDomain.all() : TupleDomain.none();
+            Expression inPredicateRemainingExpression = TRUE_LITERAL;
+
+            Expression lastInValueRemainingExpression = null;
+            boolean sameRemainingExpressions = true;
+
             for (Expression expression : valueList.getValues()) {
-                disjuncts.add(new ComparisonExpression(EQUAL, node.getValue(), expression));
+                ExtractionResult inValueExtractionResult = process(new ComparisonExpression(EQUAL, node.getValue(), expression), complement);
+                TupleDomain<Symbol> inValueTupleDomain = inValueExtractionResult.getTupleDomain();
+                Expression inValueRemainingExpression = inValueExtractionResult.getRemainingExpression();
+
+                if (complement) {
+                    inPredicateTupleDomain = inPredicateTupleDomain.intersect(inValueTupleDomain);
+                    inPredicateRemainingExpression = combineConjuncts(inPredicateRemainingExpression, inValueRemainingExpression);
+                }
+                else {
+                    inPredicateTupleDomain = columnWiseUnion(inPredicateTupleDomain, inValueTupleDomain);
+                    // Within an IN predicate, domains are all of the same exact single column. So column-wise unioned is equivalent to the strict union
+                    sameRemainingExpressions &= (lastInValueRemainingExpression == null || lastInValueRemainingExpression.equals(inValueRemainingExpression));
+                    lastInValueRemainingExpression = inValueRemainingExpression;
+                }
             }
-            return process(or(disjuncts.build()), complement);
+
+            if (!complement) {
+                inPredicateRemainingExpression = (sameRemainingExpressions ? lastInValueRemainingExpression : node);
+            }
+
+            return new ExtractionResult(inPredicateTupleDomain, inPredicateRemainingExpression);
         }
 
         @Override

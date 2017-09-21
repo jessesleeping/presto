@@ -1068,6 +1068,16 @@ public class TestDomainTranslator
         assertEquals(result.getRemainingExpression(), TRUE_LITERAL);
         assertEquals(result.getTupleDomain(), withColumnDomains(ImmutableMap.of(C_COLOR, Domain.create(ValueSet.of(COLOR, COLOR_VALUE_1, COLOR_VALUE_2).complement(), false))));
 
+        originalExpression = in(C_BIGINT, ImmutableList.of(1L, new FunctionCall(QualifiedName.of("rand"), ImmutableList.of())));
+        result = fromPredicate(originalExpression);
+        assertEquals(result.getRemainingExpression(), originalExpression);
+        assertEquals(result.getTupleDomain(), TupleDomain.all());
+
+        originalExpression = not(in(C_BIGINT, ImmutableList.of(1L, new FunctionCall(QualifiedName.of("rand"), ImmutableList.of()))));
+        result = fromPredicate(originalExpression);
+        assertEquals(result.getRemainingExpression(), not(equal(C_BIGINT, new FunctionCall(QualifiedName.of("rand"), ImmutableList.of()))));
+        assertEquals(result.getTupleDomain(), withColumnDomains(ImmutableMap.of(C_BIGINT, Domain.create(ValueSet.ofRanges(Range.lessThan(BIGINT, 1L), Range.greaterThan(BIGINT, 1L)), false))));
+
         // TODO update domain translator to properly handle cast
 //        originalExpression = in(A, Arrays.asList(1L, 2L, (Expression) null));
 //        result = fromPredicate(originalExpression, TYPES, COLUMN_HANDLES);
