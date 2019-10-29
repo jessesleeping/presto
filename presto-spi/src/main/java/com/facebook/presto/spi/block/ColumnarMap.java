@@ -153,7 +153,7 @@ public class ColumnarMap
         return (offsets[position + 1 + offsetsOffset] - offsets[position + offsetsOffset]);
     }
 
-    private int getOffset(int position)
+    public int getOffset(int position)
     {
         return offsets[position + offsetsOffset];
     }
