@@ -136,4 +136,9 @@ public final class CachingFileSystem
     {
         return dataTier.getFileStatus(path);
     }
+
+    public FileSystem getDataTier()
+    {
+        return dataTier;
+    }
 }
